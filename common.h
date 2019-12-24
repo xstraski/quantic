@@ -160,10 +160,9 @@ extern int        com_quitcode;
 void COM_Printf(const char *fmt, ...);
 void COM_DevPrintf(const char *fmt, ...);                                    // prints out only if com_devmode is true
 
-// these should be read only after common initialization
-extern qboolean_t com_devmode;                                               // true if running in developer mode: features for developers-only are enabled
-extern qboolean_t com_safe;                                                  // true if running in safe mode: safe config loaded to avoid maximum potential errors
-extern qboolean_t com_silent;                                                // true if running in silent mode: no messages interrupting a user
+extern qboolean_t com_devmode;                                               // true to load some developer-specific features
+extern qboolean_t com_safe;                                                  // true to load safe config the program will most likely start ok with
+extern qboolean_t com_silent;                                                // true to disable user notifications display
 
 // these are for Sys_Error (and such reporters)
 extern qboolean_t com_error;                                                 // true if an error reporter being called
@@ -190,6 +189,8 @@ void COM_WipeFileExtension(char *filename);
 qboolean_t COM_FSize(filehandle_t id, unsigend *o_size);
 unsigned   COM_FReadLine(filehandle_t id, char *out, unsigned count);
 unsigned   COM_FPrintf(filehandle_t id, const char *fmt, ...);
+
+unsigned COM_ComputeCRC(void *data, size_t size);
 
 /*
 ============================================================================================

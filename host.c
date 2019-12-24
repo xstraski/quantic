@@ -2,6 +2,7 @@
 
 #include "host.h"
 #include "common.c"
+#include "mathlib.c"
 #include "hunk.c"
 #include "cmd.c"
 #include "cvar.c"
@@ -21,6 +22,28 @@ float      host_framerate = 0.0f;
 
 /*
 =================
+Host_LoadConfiguration
+=================
+*/
+static void Host_LoadConfiguration(void)
+{
+	Cmd_ExecuteScript("default.cfg");
+	Cmd_ExecuteScript("user.cfg");
+
+	if (com_devmode) Cmd_ExecuteScript("devmode.cfg");
+	if (com_safe)    Cmd_ExecuteScript("safe.cfg");
+}
+
+/*
+=================
+Host_SaveConfiguration
+=================
+*/
+static void Host_SaveConfiguration(void)
+{}
+
+/*
+=================
 Host_Init
 =================
 */
@@ -34,7 +57,7 @@ void Host_Init(hostparams_t *params)
 #endif
 
 	//
-	// prepare
+	// prepare timings
 	//
 	Sys_BeginBenchmark(&initbenchmark);
 	
@@ -43,7 +66,9 @@ void Host_Init(hostparams_t *params)
 	//
 	COM_Init(params->rootpath, H_BASEDIR, H_USERDIR);    // common utilities init (memory, filesystem, etc)
 
-	SCR_Init();                                          // gfx screen init	
+	Host_LoadConfiguration();                            // configuration reading
+
+	SCR_Init();                                          // gfx screen init
 
 	//
 	// finalize
@@ -63,6 +88,9 @@ Host_Shutdown
 void Host_Shutdown(qboolean_t aftererror)
 {
 	SCR_Shutdown();
+
+	if (!aftererror)
+		Host_SaveConfiguration();
 	
 	COM_Shutdown();
 }
@@ -124,14 +152,6 @@ static void Host_FrameSynced(void)
 	// update screen
 	//
 	SCR_Frame();
-	
-	//
-	// do paranoid checks
-	//
-#ifdef PARANOID
-	if ((host_frames > 0 && host_frames < 1024) || (host_frames % 1024) == 0)
-		Alloc_Check();                     // check memory every 1024 frame
-#endif
 
 	//
 	// flush all commands

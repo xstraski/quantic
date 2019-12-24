@@ -9,15 +9,15 @@ COMMAND SYSTEM CODE
 
 ================================================================================================
 */
-#define MAXCOMMANDNAME 64
-typedef struct command_s {
-	char name[MAXCOMMANDNAME];
-	commandfunc_t func;
+#define MAXCMDNAME 64
+typedef struct cmd_s {
+	char name[MAXCMDNAME];
+	cmdfunc_t func;
 
-	struct command_s *next;
-	struct command_s *prev;
-} command_t;
-static command_t *cmd_commands;
+	struct cmd_s *next;
+	struct cmd_s *prev;
+} cmd_t;
+static cmd_t *cmd_commands;
 static critialcode_t cmdcriticalcode;
 
 /*
@@ -25,14 +25,31 @@ static critialcode_t cmdcriticalcode;
 Cmd_Exec_f
 ==================
 */
-static void Cmd_Exec_f(commandcontext_t *ctx)
+static void Cmd_Exec_f(cmdcontext_t *ctx)
 {
-	if (ctx->argc == 0) {
-		ctx->printf("No filename specified\n");
+	if (ctx->argc == 0 || !ctx->argv[0][0]) {
+		ctx->printf("bad filename specified\n");
 		return;
 	}
 
 	Cmd_ExecuteScript(ctx->argv[0]);
+}
+
+/*
+==================
+Cmd_LsCmds_f
+==================
+*/
+static void Cmd_LsCmds_f(cmdcontext_t *ctx)
+{
+	cmd_t *p;
+	
+	EnterCriticalCode(&cmdcriticalcode);
+
+	for (p = cmd_commands; p; p = p->next)
+		ctx->printf("%s\n", p->name);
+
+	LeaveCriticalCode(&cmdcriticalcode);
 }
 
 /*
@@ -43,8 +60,9 @@ Cmd_Init
 void Cmd_Init(void)
 {
 	Cmd_NewCommand("exec", Cmd_Exec_f);
+	Cmd_NewCommand("lscmds", Cmd_LsCmds_f);
 	
-	COM_Printf("Command system initialized\n");
+	COM_Printf("Cmd exec initialized\n");
 }
 
 /*
@@ -59,11 +77,34 @@ void Cmd_Shutdown(void)
 
 /*
 ==================
+Cmd_CheckCommand
+==================
+*/
+static void Cmd_CheckCommand(command_t *p)
+{
+	if (!p->func) Sys_Error("Cmd_CheckCommand: null func");
+	if (p->next || p->prev) {
+		if (p->next && p->next->prev != p) Sys_Error("Cmd_CheckCommand: linked list corrupted");
+		if (p->prev && p->prev->next != p) Sys_Error("Cmd_CheckCommand: linked list corrupted");
+	}
+}
+
+/*
+==================
 Cmd_Check
 ==================
 */
 void Cmd_Check(void)
-{}
+{
+	cmd_t *p;
+
+	EnterCriticalCode(&cmdcriticalcode);
+	
+	for (p = cmd_commands; p; p = p->next)
+		Cmd_CheckCommand(p);
+
+	LeaveCriticalCode(&cmdcriticalcode);
+}
 
 /*
 ==================
@@ -74,7 +115,7 @@ Registers new command
 */
 void Cmd_NewCommand(const char *name, commandfunc_t func)
 {
-	command_t *new;
+	cmd_t *new;
 	
 #ifdef PARANOID
 	if (!name || !name[0] || !func)
@@ -88,7 +129,7 @@ void Cmd_NewCommand(const char *name, commandfunc_t func)
 	new = Zone_Alloc(sizeof(command_t));
 	if (!new)
 		Sys_Error("Cmd_NewCommand: out of memory");
-	Q_strncpy(new->name, name, MAXCOMMANDNAME);
+	Q_strncpy(new->name, name, MAXCMDNAME);
 	new->func = func;
 	new->prev = 0;
 	new->next = com_commands;
@@ -104,9 +145,9 @@ void Cmd_NewCommand(const char *name, commandfunc_t func)
 Cmd_FindCommand
 ==================
 */
-inline command_t * Cmd_FindCommand(const char *name)
+inline cmd_t * Cmd_FindCommand(const char *name)
 {
-	command_t *it;
+	cmd_t *it;
 
 	for (it = cmd_commands; it; it = it->next) {
 		if (Q_strcmp(it->name, name) == 0)
@@ -123,7 +164,7 @@ Cmd_ForgetCommand
 */
 void Cmd_ForgetCommand(const char *name)
 {
-	command_t *cmd;
+	cmd_t *cmd;
 
 #ifdef PARANOID
 	if (!name || !name[0])
@@ -134,7 +175,7 @@ void Cmd_ForgetCommand(const char *name)
 
 	cmd = Cmd_FindCommand(name);
 	if (!it) {
-		COM_DevPrintf("Cmd_ForgetCommand: command \"%s\" not found", name);
+		COM_DevPrintf("Cmd_ForgetCommand: \"%s\" missing", name);
 		return;
 	}
 	
@@ -154,7 +195,7 @@ Cmd_ForgetAllCommands
 */
 void Cmd_ForgetAllCommands(void)
 {
-	command_t *it, *target;
+	cmd_t *it, *target;
 
 	EnterCriticalCode(&cmdcriticalcode);
 
@@ -188,7 +229,7 @@ void Cmd_Execute(const char *command)
 
 	tokens = COM_Parse(command, " \t\n", &numtokens);
 	if (tokens) {
-		command_t *cmd = Cmd_FindCommand(tokens[0]);
+		cmd_t *cmd = Cmd_FindCommand(tokens[0]);
 		if (cmd) cmd->func(numtokens > 2 ? &tokens[1] : 0);
 		
 		COM_FreeParse(tokens, numtokens);
@@ -248,7 +289,7 @@ void Cbuf_Init(void)
 	if (!cmd_buf)
 		Sys_Error("Cbuf_Init: out of memory");
 	
-	COM_Printf("Commands buffer initialized\n");
+	COM_Printf("Cmd buffer initialized\n");
 }
 
 /*
@@ -280,22 +321,22 @@ void Cbuf_Clear(void)
 
 /*
 ==================
-Cbuf_Upsize
+Cbuf_Grow
 ==================
 */
-static void Cbuf_Upsize(unsigned size)
+static void Cbuf_Grow(unsigned size)
 {
 	char *new;
 	unsigned newsize;
 	
 	if (size == 0 || size <= cmd_bufsize)
-		Sys_Error("Cbuf_Upsize: bad size");
+		Sys_Error("Cbuf_Grow: bad size");
 
 	newsize = (size_t)(((float)size * 1.5f) + 1);
 	newsize += newsize % 8;
 	new = Zone_Alloc(newsize);
 	if (!new)
-		Sys_Error("Cbuf_Upsize: out of memory");
+		Sys_Error("Cbuf_Grow: out of memory");
 
 	if (cmd_buf) {
 		Q_strcpy(new, cmd_buf);
@@ -308,23 +349,23 @@ static void Cbuf_Upsize(unsigned size)
 
 /*
 ==================
-Cbuf_SetString
+Cbuf_SetText
 ==================
 */
-void Cbuf_SetString(const char *string)
+void Cbuf_SetText(const char *string)
 {
 	unsigned len;
 	
 #ifdef PARANOID
 	if (!string || !string[0])
-		Sys_Error("Cbuf_SetString: bad string");
+		Sys_Error("Cbuf_SetText: bad string");
 #endif
 
 	EnterCriticalCode(&cmdbufcriticalcode);
 	
 	len = Q_strlen(string);
 	if (len > cmd_bufsize)
-		Cbuf_Upsize(len);
+		Cbuf_Grow(len);
 
 	Q_strcpy(cmd_buf, string);
 	cmd_buf[len] = 0;
@@ -335,22 +376,22 @@ void Cbuf_SetString(const char *string)
 
 /*
 ==================
-Cbuf_AppendString
+Cbuf_AppendText
 ==================
 */
-void Cbuf_AppendString(const char *string)
+void Cbuf_AppendText(const char *string)
 {
 	unsigned len;
 	char *p;
 	
 #ifdef PARANOID
 	if (!string || !string[0])
-		Sys_Error("Cbuf_AppendString: bad string");
+		Sys_Error("Cbuf_AppendText: bad string");
 #endif
 
 	len = Q_strlen(string);
 	if (cmd_bufpos + len >= cmd_bufsize)
-		Cbuf_Upsize(cmd_bufpos + len);
+		Cbuf_Grow(cmd_bufpos + len);
 	
 	p = cmd_buf + cmd_bufpos;
 	Q_strncpy(p, string, len);
@@ -361,6 +402,9 @@ void Cbuf_AppendString(const char *string)
 /*
 ==================
 Cbuf_Execute
+
+executes command buffer
+gets called at the end of Host_Frame
 ==================
 */
 void Cbuf_Execute(void)
@@ -373,7 +417,9 @@ void Cbuf_Execute(void)
 	while (COM_ParseLine(cmd_buf, &pos, line, sizeof(line)))
 		Cmd_Execute(line);
 
-	LeaveCriticalCode(&cmdbufcriticalcode);
+	if (cmd_buf)
+		cmd_buf[0] = 0;
+	cmd_bufpos = 0;
 
-	Cmd_Clear();
+	LeaveCriticalCode(&cmdbufcriticalcode);
 }

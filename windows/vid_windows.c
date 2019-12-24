@@ -17,11 +17,14 @@ int desktop_center_x, desktop_center_y;
 // window
 static WNDCLASS wc;
 HWND global_hWnd;
-HDC global_hDC;
+HDC  global_hDC;
+static DWORD dwWindowStyle;
+static DWORD dwWindowExStyle;
 int window_width, window_height;
 int window_x, window_y;
 int window_center_x, window_center_y;
 qboolean_t window_visible, window_minimized;
+static qboolean_t virginwindow = true;           // true if the window has never been created
 static criticalcode_t windowcriticalcode;
 
 // video mode
@@ -34,9 +37,8 @@ typedef struct {
 } vidmode_t;
 static vidmode_t origmode;
 static vidmode_t *vidmodes, *currentmode;
-static int vidmodesnum;
-static qboolean_t windowedmode = true;
-static qboolean_t inmodechange;
+static unsigned vidmodesnum;
+static qboolean_t inwindowed = true, inmodechange;
 static criticalcode_t modecriticalcode;
 
 // cursors
@@ -180,9 +182,6 @@ VID_NewWindow
 */
 static void VID_NewWindow(int width, int height, qboolean_t windowed)
 {
-	DWORD dwStyle;
-	DWORD dwExStyle;
-	
 	VID_FreeWindow();
 
 	EnterCriticalCode(&windowcriticalcode);
@@ -193,10 +192,10 @@ static void VID_NewWindow(int width, int height, qboolean_t windowed)
 	if (windowed) {
 		RECT rc = {0, 0, width, height};
 		
-		dwStyle = WS_OVERLAPPEDWINDOW;
-		dwExStyle = WS_EX_APPWINDOW;
+		dwWindowStyle = WS_OVERLAPPEDWINDOW;
+		dwWindowExStyle = WS_EX_APPWINDOW;
 
-		AdjustWindowRect(&rc, dwStyle, FALSE);
+		AdjustWindowRect(&rc, dwWindowStyle, FALSE);
 		window_width = rc.right - rc.left;
 		window_height = rc.bottom - rc.top;
 		window_center_x = window_width / 2;
@@ -210,8 +209,8 @@ static void VID_NewWindow(int width, int height, qboolean_t windowed)
 			window_y = CW_USEDEFAULT;
 		}
 	} else {
-		dwStyle = WS_SYSMENU | WS_CAPTION;
-		dwExStyle = WS_EX_APPWINDOW;
+		dwWindowStyle = WS_SYSMENU | WS_CAPTION;
+		dwWindowExStyle = WS_EX_APPWINDOW;
 
 		window_width = width;
 		window_height = height;
@@ -225,7 +224,8 @@ static void VID_NewWindow(int width, int height, qboolean_t windowed)
 	//
 	// spawn window
 	//
-	global_hWnd = CreateWindowEx(dwExStyle, wc.lpszClassName, H_NAME_LONG, dwStyle, window_x, window_y, window_width, window_height, 0, 0, global_hInstance, 0);
+	global_hWnd = CreateWindowEx(dwWindowExStyle, wc.lpszClassName, H_NAME_LONG, dwWindowStyle,
+								 window_x, window_y, window_width, window_height, 0, 0, global_hInstance, 0);
 	if (!global_hWnd) {
 		COM_DevPrintf("VID_NewWindow: CreateWindowEx failed (code 0x%x)\n", GetLastError());
 		Sys_Error("Cannot create window");
@@ -238,6 +238,12 @@ static void VID_NewWindow(int width, int height, qboolean_t windowed)
 	}
 
 	COM_Printf("Window (%dx%d %s) created\n", window_width, window_height, windowed ? "normal" : "fullscreen");
+
+	//
+	// show window
+	//
+	ShowWindow(global_hWnd, virginwindow ? global_nCmdShow : SW_SHOW);
+	virginwindow = false;
 
 	LeaveCriticalCode(&windowcriticalcode);
 }
@@ -415,7 +421,6 @@ qboolean_t VID_SetMode(int modeid, qboolean_t fullscreen)
 {
 	DEVMODE dm;
 	vidmode_t *mode;
-	qboolean_t windowed = !fullscreen;
 
 	COM_Printf("Setting video mode %d...\n", modeid);
 
@@ -438,11 +443,11 @@ qboolean_t VID_SetMode(int modeid, qboolean_t fullscreen)
 		return false;
 	}
 	currentmode = mode;
-	windowedmode = windowed;
+	inwindowed = !fullscreen;
 
 	VID_NewDesktopMetrics();
 	
-	VID_NewWindow(mode->width, mode->height, mode->depth, mode->frequency);
+	VID_NewWindow(mode->width, mode->height, inwindowed);
 
 	LeaveCriticalCode(&modecriticalcode);
 	inmodechange = false;
@@ -477,7 +482,7 @@ void VID_RestoreMode(void)
 
 	ChangeDisplaySettings(0, 0, &dm);
 	currentmode = mode;
-	windowedmode = true;
+	inwindowed = true;
 
 	LeaveCriticalCode(&modecriticalcode);
 	inmodechange = false;

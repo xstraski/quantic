@@ -5,13 +5,12 @@
 
 #include <windows.h>
 
-extern HINSTANCE     global_hInstance;            // original hInstance from WinMain
-extern int           global_nCmdShow;             // original nCmdShow from WinMain
-
+extern HINSTANCE     global_hInstance;                      // original hInstance from WinMain
+extern int           global_nCmdShow;                       // original nCmdShow from WinMain
 extern HWND          global_hWnd;
 extern HDC           global_hDC;
 
-extern qboolean_t    ActiveApp;
+extern qboolean_t    ActiveApp;                             // the program is in focus / active
 extern int           desktop_width, dekstop_height;
 extern int           desktop_center_x, desktop_center_y;
 

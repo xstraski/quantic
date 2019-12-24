@@ -2,7 +2,7 @@
 
 #include "common.h"
 #include "sys.h"
-
+#include "cvar.h"
 
 /*
 ======================================================================================================
@@ -149,6 +149,7 @@ qboolean_t com_quitting;
 int        com_quitcode = QCODE_NORMAL;
 
 qboolean_t com_error = false;
+qboolean_t com_error_recursive = false;
 
 qboolean_t com_devmode = false;
 qboolean_t com_safe = false;
@@ -162,6 +163,8 @@ static char           logfilename[MAXFILENAME];
 static criticalcode_t logcriticalcode;
 
 static qboolean_t dontprintf = false;                             // true to disable COM_Printf and COM_DevPrintf (to avoid recursive errors in them
+
+static unsigned crc_table[256];
 
 /*
 =================
@@ -224,11 +227,37 @@ static void COM_ParseCmdline(int argc, char **argv)
 
 /*
 =================
+COM_BuildCRCTable
+=================
+*/
+static void COM_BuildCRCTable(void)
+{
+	int i, j;
+	unsigned rem;
+
+	for (i = 0; i < 256; i++) {
+		rem = i;
+		for (j = 0; j < 8; j++) {
+			if (rem & 1) {
+				rem >>= 1;
+				rem ^= 0xedb88320;
+			} else {
+				rem >>= 1;
+			}
+		}
+
+		crc_table[i] = rem;
+	}
+}
+
+/*
+=================
 COM_InitSys
 
-Does initializations for basic low-level stuff required
-very early in system layer before COM_Init can be called,
-calls Sys_Init itself after all, prepares logfile
+Does initializations for basic low-level stuff that is required
+very early in system layer before COM_Init can be called and that can
+be initialized before the layer is ready, then calls Sys_Init itself after all,
+prepares logfile
 =================
 */
 void COM_InitSys(int argc, char **argv, size_t minmemory, size_t maxmemory)
@@ -251,6 +280,11 @@ void COM_InitSys(int argc, char **argv, size_t minmemory, size_t maxmemory)
 	if (COM_CheckArg("-silent"))
 		com_silent = true;
 
+	//
+	// hashing init
+	//
+	COM_BuildCRCTable();
+	
 	//
 	// system abstraction layer init
 	//
@@ -328,6 +362,7 @@ COM_Abort_f
 static void COM_Abort_f(int argc, char **argv)
 {
 	COM_Printf("User abort triggered\n");
+	
 	Sys_Quit(0);
 }
 
@@ -1089,4 +1124,26 @@ unsigned COM_FPrintf(filehandle_t id, const char *fmt, ...)
 	va_end(args);
 
 	return Sys_FWrite(id, buf, Q_strlen(buf) + 1);
+}
+
+/*
+=================
+COM_ComputeCRC
+=================
+*/
+unsigned COM_ComputeCRC(void *data, size_t size)
+{
+	unsigned crc = 0;
+	
+#ifdef PARANOID
+	if (!data || size == 0)
+		Sys_Error("COM_ComputeCRC: bad params");
+#endif
+
+	while (size--) {
+		crc = (crc << 8) ^ crc_table[((crc >> 24) ^ *data) & 255];
+		data++;
+	}
+
+	return crc;
 }

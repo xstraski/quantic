@@ -1,6 +1,7 @@
 // com_alloc.c -- systems to alloc and manage memory
 
 #include "common.h"
+#include "mathlib.h"
 
 /*
 ============================================================================================================
@@ -9,22 +10,22 @@ Hunk Memory Stack
 
 ============================================================================================================
 */
-#define MAXHUNKNAME 32
+#define MAXHUNKNAME   32
+#define HUNKCHECKPOW  1024
 #define HUNKALIGNMENT 16
-#define HUNKSENTINAL 0x4fba8fcd
-
+#define HUNKSENTINAL  0x4fba8fcd
 typedef struct {
 	unsigned sentinal;
-	size_t size;
-	char name[MAXHUNKNAME];
+	size_t   size;
+	char     name[MAXHUNKNAME];
 } hunkheader_t;
 static byte_t *hunk_base, *hunk_end;
-static size_t hunk_size;
-static size_t hunk_used_low = 0, hunk_used_high = 0;
+static size_t hunk_size, hunk_used_low, hunk_used_high;
+static unsigned hunk_counter;
 static criticalcode_t hunkcriticalcode;
 
-// these are in cache code way down below
-void Cache_FreeLow(size_t mark);
+void Hunk_CheckGeneral(void);
+void Cache_FreeLow(size_t mark);   // these are in cache code way down below
 void Cache_FreeHigh(size_t mark);
 
 /*
@@ -101,6 +102,7 @@ Hunk_Size
 */
 size_t Hunk_Size(void)
 {
+	MemoryBarrierForWrite();
 	return hunk_size;
 }
 
@@ -111,6 +113,7 @@ Hunk_LowMark
 */
 size_t Hunk_LowMark(void)
 {
+	MemoryBarrierForWrite();
 	return hunk_used_low;
 }
 
@@ -121,6 +124,7 @@ Hunk_HighMark
 */
 size_t Hunk_HighMark(void)
 {
+	MemoryBarrierForWrite();
 	return hunk_used_high;
 }
 
@@ -149,7 +153,13 @@ void * Hunk_LowAllocNamed(size_t size, const char *name)
 	if (size == 0 || !name || !name[0])
 		Sys_Error("Hunk_LowAllocNamed: bad params");
 
-	Hunk_Check();
+	// validate hunk every HUNKCHECKPOW alloc
+	if (Q_upow(hunk_counter, HUNKCHECKPOW)) {
+		Hunk_CheckGeneral();
+		hunk_counter = 0;
+	} else {
+		hunk_counter++;
+	}
 #endif
 
 	EnterCriticalCode(&hunkcriticalcode);
@@ -197,7 +207,13 @@ void * Hunk_HighAllocNamed(size_t size, const char *name)
 	if (size == 0 || !name || !name[0])
 		Sys_Error("Hunk_HighAllocNamed: bad params");
 
-	Hunk_Check();
+	// validate hunk every HUNKCHECKPOW alloc
+	if (upow(hunk_counter, HUNKCHECKPOW)) {
+		Hunk_CheckGeneral();
+		hunk_counter = 0;
+	} else {
+		hunk_counter++;
+	}
 #endif
 
 	EnterCriticalCode(&hunkcriticalcode);
@@ -291,6 +307,29 @@ void Hunk_HighPopToMark(size_t mark)
 
 /*
 ==================
+Hunk_CheckGeneral
+==================
+*/
+static void Hunk_CheckGeneral(void)
+{
+	hunkheader_t *h;
+	
+	EnterCriticalCode(&hunkcriticalcode);
+	
+	for (h = (hunkheader_t *)hunk_base; (byte_t *)h != hunk_base + hunk_used_low;) {
+		if (h->sentinal != HUNKSENTINAL)
+			Sys_Error("Hunk_CheckGeneral: trashed sentinal");
+		if (h->size < HUNKALIGNMENT || h->size + (byte_t *)h - hunk_base > hunk_size)
+			Sys_Error("Hunk_CheckGeneral: bad size");
+
+		h = (hunkheader_t *)((byte_t *)h + h->size);
+	}
+
+	LeaveCriticalCode(&hunkcriticalcode);
+}
+
+/*
+==================
 Hunk_Check
 
 Runs consistency and sentinal trashing checks
@@ -298,20 +337,17 @@ Runs consistency and sentinal trashing checks
 */
 void Hunk_Check(void)
 {
-	hunkheader_t *h;
+	//
+	// hunk general checks
+	//
+	Hunk_CheckGeneral();
 
-	EnterCriticalCode(&hunkcriticalcode);
+	//
+	// subsystems checks
+	//
+	Zone_Check();
 	
-	for (h = (hunkheader_t *)hunk_base; (byte_t *)h != hunk_base + hunk_used_low;) {
-		if (h->sentinal != HUNKSENTINAL)
-			Sys_Error("Hunk_Check: trashed sentinal");
-		if (h->size < HUNKALIGNMENT || h->size + (byte_t *)h - hunk_base > hunk_size)
-			Sys_Error("Hunk_Check: bad size");
-
-		h = (hunkheader_t *)((byte_t *)h + h->size);
-	}
-
-	LeaveCriticalCode(&hunkcriticalcode);
+	Cache_Check();
 }
 
 /*
@@ -335,10 +371,11 @@ Zone Memory Allocator
 
 ============================================================================================================
 */
-#define DEF_ZPIECE 0.3
-#define DEF_ZMINFRAG 64
+#define DEF_ZPIECE    0.3
+#define DEF_ZMINFRAG  64
+#define ZONECHECKPOW  HUNKCHECKPOW
 #define ZONEALIGNMENT 8
-#define ZONESENTINAL 0xff0e1377
+#define ZONESENTINAL  0xff0e1377
 typedef struct zoneblock_s {
 	size_t sentinel;
 	size_t size;
@@ -354,6 +391,7 @@ static void * zone_base;
 static size_t zone_size, zone_mark;
 static size_t zone_minfrag;
 static zone_t *zone0;
+static unsigned zone_counter;
 static criticalcode_t zonecriticalcode;
 
 /*
@@ -395,7 +433,13 @@ void * Zone_Alloc(size_t size)
 	if (size == 0)
 		Sys_Error("Zone_Alloc: bad size");
 
-	Zone_Check();
+	// validate zone every ZONECHECKPOW alloc
+	if (upow(zone_counter, ZONECHECKPOW)) {
+		Zone_Check();
+		zone_counter = 0;
+	} else {
+		zone_counter++;
+	}
 #endif
 
 	EnterCriticalCode(&zonecriticalcode);

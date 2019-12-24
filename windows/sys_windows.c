@@ -249,22 +249,22 @@ and OS process heap
 */
 void Sys_HeapCheck(void)
 {
-#ifdef PARANOID
 	//
 	// check crt heap
 	//
+#if defined(DEVBUILD)
 	switch (_heapchk()) {
 	case _HEAPBADBEGIN: Sys_Error("Sys_HeapCheck: _heapchk tells _HEAPBADBEGIN"); break;
 	case _HEAPBADNODE:  Sys_Error("Sys_HeapCheck: _heapchk tells _HEAPBADNODE");  break;
 	case _HEAPBADPTR:   Sys_Error("Sys_HeapCheck: _heapchk tells _HEAPBADPTR");   break;
 	case _HEAPEMPTY:    Sys_Error("Sys_HeapCheck: _heapchk tells _HEAPEMPTY");    break;
 	}
-#else
+#elif defined(PARANOID)
 	if (_heapchk() != _HEAPOK)
 		Sys_Error("Runtime heap not validated");
 #endif	
 
-#ifdef PARANOID	
+#ifdef PARANOID
 	//
 	// check system heap
 	//
@@ -683,7 +683,7 @@ static qboolean_t x86_SupportsCPUID(void)
 		pushfd
 	    pop  eax
 	    xor  eax, ebx
-		jne   CPUIDSupported
+		jne  CPUIDSupported
 		mov  cpuid_supported, 0
     CPUIDSupported:
 	}
@@ -1337,6 +1337,8 @@ void Sys_Init(size_t minmemory, size_t maxmemory)
 	//
 	// preallocation of main dynamic memory
 	//
+	Sys_HeapCheck();
+	
 	p = COM_CheckArgValue("-megs");
 	if (p) {
 		hostparams.memsize = Q_strtoull(p, 0, 10);
