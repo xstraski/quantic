@@ -27,6 +27,8 @@ Host_LoadConfiguration
 */
 static void Host_LoadConfiguration(void)
 {
+	COM_Printf("Loading configuration...\n");
+	
 	Cmd_ExecuteScript("default.cfg");
 	Cmd_ExecuteScript("user.cfg");
 
@@ -40,7 +42,21 @@ Host_SaveConfiguration
 =================
 */
 static void Host_SaveConfiguration(void)
-{}
+{
+	filehandle_t file;
+	
+	COM_Printf("Saving configuration...");
+	file = Sys_FOpenForWriting("user.cfg", false);
+	if (file == BADFILE) {
+		COM_Printf(" failed, file access error\n");
+		return;
+	}
+
+	Cvar_WriteFile(file);
+
+	Sys_FClose(file);
+	COM_Printf("\n");
+}
 
 /*
 =================
@@ -74,8 +90,8 @@ void Host_Init(hostparams_t *params)
 	// finalize
 	//
 	Sys_Benchmark(&initbenchmark, false);	
-	COM_DevPrintf("Host_Init: initbenchmark.secs_elapsed %f\n", initbenchmark.secs_elapsed);
-	COM_DevPrintf("Host_Init: initbenchmark.clks_elapsed %d\n", initbenchmark.clks_elapsed);
+	COM_DevPrintf("Host_Init: secs elapsed %f\n", initbenchmark.secs_elapsed);
+	COM_DevPrintf("Host_Init: clks elapsed %d\n", initbenchmark.clks_elapsed);
 	
 	COM_Printf("========== %s Initialized Ok ==========\n", H_NAME);
 }

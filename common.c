@@ -171,19 +171,19 @@ static unsigned crc_table[256];
 PrintStringsArray
 =================
 */
-inline void PrintStringsArray(void (*printfunc)(const char *fmt, ...), char **strings, const char *separator)
+inline void PrintStringsArray(printf_t printcall, char **strings, const char *separator)
 {
 	int i = 0;
 	
 #ifdef PARANOID
-	if (!printfunc || !strings || !strings[0])
+	if (!printcall || !strings || !strings[0])
 		Sys_Error("PrintStringsArray: bad params");
 #endif
 
-	while (strings[i]) {
-		printfunc("%s", strings[i]);
+ 	while (strings[i]) {
+		printcall("%s", strings[i]);
 		if (strings[i + 1] && separator)
-			printfunc(separator);
+			printcall(separator);
 		i++;
 	}
 }
@@ -252,6 +252,14 @@ static void COM_BuildCRCTable(void)
 
 /*
 =================
+COM_BuildMD4Table
+=================
+*/
+static void COM_BuildMD4Table(void)
+{}
+
+/*
+=================
 COM_InitSys
 
 Does initializations for basic low-level stuff that is required
@@ -284,6 +292,8 @@ void COM_InitSys(int argc, char **argv, size_t minmemory, size_t maxmemory)
 	// hashing init
 	//
 	COM_BuildCRCTable();
+
+	COM_BuildMD4Table();
 	
 	//
 	// system abstraction layer init
@@ -328,10 +338,16 @@ void COM_InitSys(int argc, char **argv, size_t minmemory, size_t maxmemory)
 COM_Quit_f
 =================
 */
-static void COM_Quit_f(int argc, char **argv)
+static void COM_Quit_f(cmdcontext_t *ctx)
 {
-	COM_Printf("User requests quit\n");
-	COM_Quit(0);
+	int qcode;
+	
+	COM_Printf("** Quit invoked **\n");
+
+	if (ctx->argc > 1) qcode = Q_atoi(ctx->argv[0]);
+	else               qcode = 0;
+	
+	COM_Quit(qcode);
 }
 
 /*
@@ -342,9 +358,8 @@ COM_Error_f
 static void COM_Error_f(int argc, char **argv)
 {
 	int i = 0;
-	char error[2048];
+	char error[2048] = {0};
 
-	Q_strcpy(error, "User error: ");
 	for (i = 0; i < (argc - 1); i++) {
 		Q_strcat(error, argv[i]);
 		Q_strcat(error, " ");
@@ -361,8 +376,7 @@ COM_Abort_f
  */
 static void COM_Abort_f(int argc, char **argv)
 {
-	COM_Printf("User abort triggered\n");
-	
+	COM_Printf("** Abort invoked **\n");
 	Sys_Quit(0);
 }
 
@@ -376,7 +390,7 @@ void COM_Init(void *membase, size_t memsize, const char *rootpath, const char *b
 	//
 	// complete subsystems init
 	//	
-	Hunk_Init(membase, memsize, 0, UGLYPARAM);         // memory allocators init
+	Hunk_Init(membase, memsize, 0, UGLYPARAM);         // hunk memory and allocators init
 
 	Cmd_Init();                                        // command system init
 
@@ -555,7 +569,6 @@ void COM_SpecifyArgs(char **args, qboolean_t override_existing)
 				COM_DevPrintf("COM_SpecifyArgs: %s already specified", com_argv[existing]);
 				if (override_existing) COM_DevPrintf(", overriding\n");
 				else                   COM_DevPrintf("\n");
-				
 			}
 		}
 		

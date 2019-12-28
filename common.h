@@ -126,6 +126,7 @@ be implemented in a future.
 #define Q_strtoul strtoul
 #define Q_strtoull strtoull
 #define Q_strtof Q_atof
+#define Q_atoi atoi
 #define Q_atof atof
 #define Q_sprintf sprintf
 #define Q_snprintf snprintf
@@ -139,7 +140,7 @@ COMMON UTILITIES PRIMARY INTERFACE
 
 ============================================================================================
 */
-void COM_InitSys(int argc, char **argv, size_t minmemory, size_t maxmemory); // system layer early required common subsystems init
+void COM_InitSys(int argc, char **argv, size_t minmemory, size_t maxmemory); // system layer and early required common subsystems init
 void COM_Init(void *membase, size_t memsize, const char *rootpath, const char *basedir, const char *userdir);
 void COM_Shutdown(void);
 
@@ -157,6 +158,7 @@ void COM_Quit(int code);
 extern qboolean_t com_quitting;
 extern int        com_quitcode;
 
+typedef void (*printf_t)(const char *fmt, ...);
 void COM_Printf(const char *fmt, ...);
 void COM_DevPrintf(const char *fmt, ...);                                    // prints out only if com_devmode is true
 
@@ -191,6 +193,7 @@ unsigned   COM_FReadLine(filehandle_t id, char *out, unsigned count);
 unsigned   COM_FPrintf(filehandle_t id, const char *fmt, ...);
 
 unsigned COM_ComputeCRC(void *data, size_t size);
+unsigned COM_ComputeMD4(void *data, size_t size);
 
 /*
 ============================================================================================

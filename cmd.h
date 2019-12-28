@@ -19,17 +19,15 @@ typedef enum {
     cmdsource_console,                            // executed from developer console
     cmdsource_script                              // executed from a script file
 } cmdsource_t;
-typedef void (*cmdsource_printf)(const char *fmt, ...);
-typedef void (*cmdsource_devprintf)(const char *fmt, ...);
 
 // command execution context
 typedef struct {
-	int    argc;
-	char **argv;
+	unsigned argc;
+	char **  argv;
 	
 	cmdsource_t source;                           // where has been called from
-	cmdsource_printf printf;
-	cmdsource_devprintf devprintf;
+	printf_t printf;
+	printf_t devprintf;
 } cmdcontext_t;
 typedef void (*cmdfunc_t)(cmdcontext_t *ctx);
 
@@ -42,7 +40,7 @@ void Cmd_NewCommand(const char *name, cmdfunc_t func);
 void Cmd_ForgetCommand(const char *name);
 void Cmd_ForgetAllCommands(void);
 
-void Cmd_Execute(const char *command);
+void Cmd_ExecuteCommand(const char *command);
 void Cmd_ExecuteScript(const char *filename);
 
 /*

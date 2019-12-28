@@ -38,6 +38,9 @@ qboolean_t Sys_Sleep(unsigned msecs);
 void       Sys_SleepForever(void);
 void Sys_Yield(void);
 
+void Sys_ObtainDate(short *year, short *month, short *day, short *dayofweek);
+void Sys_ObtainTime(short *hour, short *minute, short *second);
+
 // file IO
 #define BADFILE BADHANDLE
 typedef int filehandle_t;

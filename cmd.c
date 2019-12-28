@@ -1,6 +1,7 @@
 // cmd.c
 
 #include "common.h"
+#include "console.h"
 
 /*
 ================================================================================================
@@ -13,11 +14,12 @@ COMMAND SYSTEM CODE
 typedef struct cmd_s {
 	char name[MAXCMDNAME];
 	cmdfunc_t func;
-
+	
 	struct cmd_s *next;
 	struct cmd_s *prev;
 } cmd_t;
 static cmd_t *cmd_commands;
+static qboolean_t cmd_inscript;         // true if processing a script file
 static critialcode_t cmdcriticalcode;
 
 /*
@@ -62,7 +64,7 @@ void Cmd_Init(void)
 	Cmd_NewCommand("exec", Cmd_Exec_f);
 	Cmd_NewCommand("lscmds", Cmd_LsCmds_f);
 	
-	COM_Printf("Cmd exec initialized\n");
+	COM_Printf("Command exec initialized\n");
 }
 
 /*
@@ -77,20 +79,6 @@ void Cmd_Shutdown(void)
 
 /*
 ==================
-Cmd_CheckCommand
-==================
-*/
-static void Cmd_CheckCommand(command_t *p)
-{
-	if (!p->func) Sys_Error("Cmd_CheckCommand: null func");
-	if (p->next || p->prev) {
-		if (p->next && p->next->prev != p) Sys_Error("Cmd_CheckCommand: linked list corrupted");
-		if (p->prev && p->prev->next != p) Sys_Error("Cmd_CheckCommand: linked list corrupted");
-	}
-}
-
-/*
-==================
 Cmd_Check
 ==================
 */
@@ -100,8 +88,13 @@ void Cmd_Check(void)
 
 	EnterCriticalCode(&cmdcriticalcode);
 	
-	for (p = cmd_commands; p; p = p->next)
-		Cmd_CheckCommand(p);
+	for (p = cmd_commands; p; p = p->next) {
+		if (!p->func) Sys_Error("Cmd_Check: null func");
+		if (p->next || p->prev) {
+			if (p->next && p->next->prev != p) Sys_Error("Cmd_Check: linked list corrupted on \"%s\"", p->name);
+			if (p->prev && p->prev->next != p) Sys_Error("Cmd_Check: linked list corrupted on \"%s\"", p->name);
+		}
+	}
 
 	LeaveCriticalCode(&cmdcriticalcode);
 }
@@ -212,26 +205,77 @@ void Cmd_ForgetAllCommands(void)
 
 /*
 ==================
-Cmd_Execute
+NullPrintf
+NullDevPrintf
+
+for Cmd_ExecuteTokens
 ==================
 */
-void Cmd_Execute(const char *command)
+static void NullPrintf(const char *fmt, ...) {}
+static void NullDevPrintf(const char *fmt, ...) {}
+
+/*
+==================
+Cmd_ExecuteTokens
+==================
+*/
+static void Cmd_ExecuteTokens(char **tokens, unsigned numtokens)
+{
+	cmd_t *cmd;
+	cmdcontext_t ctx;
+	qboolean_t printvar;
+
+	cmd = Cmd_FindCommand(tokens[0]);
+	if (cmd) printvar = false;
+	else     printvar = true;
+	
+	if (cmd_inscript) ctx.source = cmdsource_script;
+	else              ctx.source = cmdsource_code;
+	switch (ctx.source) {
+	case cmdsource_code:
+		ctx.printf = NullPrintf;
+		ctx.devprintf = NullDevPrintf;
+		break;
+	case cmdsource_script:
+		ctx.printf = COM_Printf;
+		ctx.devprintf = COM_DevPrintf;
+		break;
+	case cmdsource_console:
+		ctx.printf = 0; // TODO: Con_Printf in a future
+		ctx.devprintf = 0; // TODO: Con_DevPrintf in a future
+		break;
+	}
+
+	if (printvar) {
+		Cvar_PrintVariable(tokens[0], ctx.printf);
+	} else {
+		ctx.argc = numtokens - 1;
+		ctx.argv = numtokens >=2 ? &tokens[1] : 0;
+
+		cmd->func(&ctx);
+	}
+}
+
+/*
+==================
+Cmd_ExecuteCommand
+==================
+*/
+void Cmd_ExecuteCommand(const char *command)
 {
 	char **tokens;
 	unsigned numtokens;
 	
 #ifdef PARANOID
 	if (!command || !command[0])
-		Sys_Error("Cmd_Execute: bad command");
+		Sys_Error("Cmd_ExecuteCommand: bad command");
 #endif
 
 	EnterCriticalCode(&cmdcriticalcode);
 
 	tokens = COM_Parse(command, " \t\n", &numtokens);
 	if (tokens) {
-		cmd_t *cmd = Cmd_FindCommand(tokens[0]);
-		if (cmd) cmd->func(numtokens > 2 ? &tokens[1] : 0);
-		
+		Cmd_ExecuteTokens(tokens, numtokens);
 		COM_FreeParse(tokens, numtokens);
 	}
 
@@ -252,15 +296,30 @@ void Cmd_ExecuteScript(const char *filename)
 		Sys_Error("Cmd_ExecuteScript: bad filename");
 #endif
 
+	EnterCriticalCode(&cmdcriticalcode);
+
 	file = Sys_FOpenForReading(filename);
 	if (file != BADFILE) {
 		char line[2048];
-		
-		while (COM_FReadLine(file, line, sizeof(line)))
-			Cmd_Execute(line);
+
+		while (COM_FReadLine(file, line, sizeof(line))) {
+			char **tokens;
+			unsigned numtokens;
+
+			tokens = COM_Parse(command, " \t\n", &numtokens);
+			if (tokens) {
+				cmd_inscript = true;
+				Cmd_ExecuteTokens(tokens, numtokens);
+				cmd_inscript = false;
+				
+				COM_FreeParse(tokens, numtokens);
+			}
+		}
 
 		Sys_FClose(file);
 	}
+
+	LeaveCriticalCode(&cmdcriticalcode);
 }
 
 /*
@@ -289,7 +348,7 @@ void Cbuf_Init(void)
 	if (!cmd_buf)
 		Sys_Error("Cbuf_Init: out of memory");
 	
-	COM_Printf("Cmd buffer initialized\n");
+	COM_Printf("Command buffer initialized\n");
 }
 
 /*

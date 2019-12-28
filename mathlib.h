@@ -39,11 +39,11 @@ inline unsigned upow(unsigned base, unsigned exp)
 }
 
 // floating points compare
-inline qboolean_t samefloats(float a, float b)
+inline qboolean_t cmpfloats(float a, float b)
 {
 	return absf(a - b) <= EPS;
 }
-inline qboolean_t samedoubles(double a, double b)
+inline qboolean_t cmpdoubles(double a, double b)
 {
 	return absl(a - b) <= EPS;
 }
